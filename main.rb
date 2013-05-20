@@ -23,7 +23,7 @@ configure do
 
   set :lauser, ENV['LESSACCOUNTING_USER'] 				# LessAccounting User
   set :lapass, ENV['LESSACCOUNTING_PASS']				# LessAccounting Password
-  set :lakey, ENV['LESSACCOUNTING_APIKEY'] 				@ LessAccounting API Key
+  set :lakey, ENV['LESSACCOUNTING_APIKEY'] 				# LessAccounting API Key
 
   set :publishable_key, ENV['STRIPE_PK'] 				# Stripe Publishable Key (Test / Live)
   set :secret_key, ENV['STRIPE_SK'] 					# Stripe Secret Key (Test / Live)
