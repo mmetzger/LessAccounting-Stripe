@@ -1,3 +1,13 @@
+#
+# Basic LessAccounting <-> Stripe integration using API
+#
+# Utilizes LessAccounting Invoice calls to get list of invoices, Payments API to post payments
+# Stripe "blue-button" popup used to charge cards
+#
+# Mike Metzger, mike@flexiblecreations.com
+# 2013-05-10
+#
+
 require 'sinatra'
 require 'sinatra/reloader'
 require 'net/http'
@@ -7,18 +17,24 @@ require 'stripe'
 require 'pp'
 
 configure do
-  set :baseurl, 'https://flexiblecreations.lessaccounting.com/'
-  set :company_name, 'Flexible Creations, LLC'
-  set :lauser, ENV['LESSACCOUNTING_USER'] 
-  set :lapass, ENV['LESSACCOUNTING_PASS']
-  set :lakey, ENV['LESSACCOUNTING_APIKEY'] 
+  set :baseurl, 'https://flexiblecreations.lessaccounting.com/'		# Change to your LessAccounting URL
+  set :company_name, 'Flexible Creations, LLC'				# Change to your Company Name / Description,
+									#  appears in the Stripe popup
 
-  set :publishable_key, ENV['STRIPE_PK'] 
-  set :secret_key, ENV['STRIPE_SK'] 
+  set :lauser, ENV['LESSACCOUNTING_USER'] 				# LessAccounting User
+  set :lapass, ENV['LESSACCOUNTING_PASS']				# LessAccounting Password
+  set :lakey, ENV['LESSACCOUNTING_APIKEY'] 				@ LessAccounting API Key
+
+  set :publishable_key, ENV['STRIPE_PK'] 				# Stripe Publishable Key (Test / Live)
+  set :secret_key, ENV['STRIPE_SK'] 					# Stripe Secret Key (Test / Live)
 
   Stripe.api_key = settings.secret_key
 end
 
+#
+# Shows a basic list of Unpaid invoices.  This is mainly for testing, I would suggest creating a different method
+# of searching for the invoice in question (may not want invoices browseable between customers.)
+#
 get '/unpaid' do
   uri = URI.parse(settings.baseurl + "invoices/unpaid.json?api_key=" + settings.lakey)
   http = Net::HTTP.new(uri.host, uri.port)
@@ -33,6 +49,9 @@ get '/unpaid' do
   erb :index 
 end
 
+#
+# Test method to show paid invoices - do not use in production
+#
 get '/paid' do
   uri = URI.parse(settings.baseurl + "invoices/paid.json?api_key=" + settings.lakey)
   http = Net::HTTP.new(uri.host, uri.port)
@@ -47,6 +66,18 @@ get '/paid' do
   erb :index 
 end
 
+# 
+# This is the starting method for generating a Stripe charge.  
+#
+# 1) Invoice ID is passed as parameter and used in the invoices API call to get detail info on the Invoice.
+# 2) The total due is calculated (invoice total - payment totals)
+# 3) If the total due is zero, no charge is made
+# 4) If there is a balance due, a Stripe popup is created using the company details and invoice details
+# 5) If the Stripe card is valid, the Stripe.js script forwards to the /charge URL endpoint with the Stripe Token and
+#    appropriate details.
+# 6) If the card fails, an option to try again appears along with an error message.  Note that some Stripe errors render their
+#    own messages and require further customization.
+#
 get '/pay/:invoiceid' do
   @invoiceid = params[:invoiceid]
   uri = URI.parse(settings.baseurl + "invoices/" + @invoiceid + ".json?api_key=" + settings.lakey)
@@ -69,6 +100,20 @@ get '/pay/:invoiceid' do
   end
 end
 
+#
+# This method actually charges the user's card using the Stripe token information.
+# 
+# 1) Stripe token and invoice details are taken as parameters.  Note that Stripe requires charges in cents 
+#    (ie, $1500.00 == 150000)
+# 2) A Stripe.charge is created with the details.
+# 3) Once charge is successful, a call to the LessAccounting Payments API is made to create the payment with the
+#    appropriate details.  Note that the Payments API call uses querystring values, not POST data.  
+# 4) If the POST returns a 201, the payment successful page appears with a thank you note.
+# 5) If there is an issue anywhere along the way, an error page appears.
+#
+# TODO: Error handling is almost non-existant.  Need to separate the API calls out a bit more - if Stripe fails, throw proper
+#       error.  If Payments API call fails, possibly refund Stripe or try Payments API again.
+#
 post '/charge' do
   t = Time.now
   pp params
